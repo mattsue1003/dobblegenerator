@@ -1,598 +1,656 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Download, RefreshCw, Grid, Image as ImageIcon, Trash2, Settings, Archive } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>樂齡桌遊生成器 (Dobble Generator)</title>
+    
+    <!-- 載入 React 核心 -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- 載入 Babel (讓瀏覽器可以執行 React 程式碼) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 載入 Tailwind CSS (樣式) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 載入功能函式庫 (PDF, 截圖, 壓縮) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
-// --- 動態載入外部腳本 (CDN) ---
-const useExternalScripts = (urls) => {
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    const loadScript = (url) => {
-      return new Promise((resolve, reject) => {
-        if (document.querySelector(`script[src="${url}"]`)) {
-          resolve();
-          return;
+    <style>
+        /* 自定義捲軸樣式 */
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
         }
-        const script = document.createElement('script');
-        script.src = url;
-        script.async = true;
-        script.onload = resolve;
-        script.onerror = reject;
-        document.body.appendChild(script);
-      });
-    };
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-amber-50">
+    <div id="root"></div>
 
-    Promise.all(urls.map(loadScript))
-      .then(() => setLoaded(true))
-      .catch((err) => console.error("Failed to load scripts", err));
-  }, [urls]);
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
 
-  return loaded;
-};
+        // --- 簡易 Icon 組件 (避免外部依賴問題) ---
+        const Icons = {
+            Grid: ({ size = 24, className = "" }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+            ),
+            Upload: ({ size = 24, className = "" }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+            ),
+            Download: ({ size = 24, className = "" }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            ),
+            RefreshCw: ({ size = 24, className = "" }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+            ),
+            ImageIcon: ({ size = 24, className = "" }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+            ),
+            Trash2: ({ size = 24, className = "" }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+            ),
+            Settings: ({ size = 24, className = "" }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            ),
+            Archive: ({ size = 24, className = "" }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+            ),
+            AlertTriangle: ({ size = 24, className = "" }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
+            )
+        };
 
-// --- Dobble 數學邏輯 ---
-const generateDobbleDeck = (n) => {
-  const cards = [];
+        // --- Dobble 數學邏輯 ---
+        const generateDobbleDeck = (n) => {
+            const cards = [];
 
-  // 1. 生成 n*n 張卡片
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      const card = [];
-      card.push(i + 1);
-      for (let k = 0; k < n; k++) {
-        const val = (n + 2) + (n * k) + ((i * k + j) % n);
-        card.push(val);
-      }
-      cards.push(card);
-    }
-  }
+            // 1. 生成 n*n 張卡片
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    const card = [];
+                    card.push(i + 1);
+                    for (let k = 0; k < n; k++) {
+                        const val = (n + 2) + (n * k) + ((i * k + j) % n);
+                        card.push(val);
+                    }
+                    cards.push(card);
+                }
+            }
 
-  // 2. 生成 n 張卡片
-  for (let i = 0; i < n; i++) {
-    const card = [];
-    card.push(0 + 1);
-    for (let j = 0; j < n; j++) {
-      const val = (n + 2) + (n * j) + i;
-      card.push(val);
-    }
-    cards.push(card);
-  }
+            // 2. 生成 n 張卡片
+            for (let i = 0; i < n; i++) {
+                const card = [];
+                card.push(0 + 1);
+                for (let j = 0; j < n; j++) {
+                    const val = (n + 2) + (n * j) + i;
+                    card.push(val);
+                }
+                cards.push(card);
+            }
 
-  // 3. 生成 1 張卡片
-  const lastCard = [];
-  lastCard.push(0 + 1);
-  for (let i = 0; i < n; i++) {
-    lastCard.push(i + 1);
-  }
-  cards.push(lastCard);
+            // 3. 生成 1 張卡片
+            const lastCard = [];
+            lastCard.push(0 + 1);
+            for (let i = 0; i < n; i++) {
+                lastCard.push(i + 1);
+            }
+            cards.push(lastCard);
 
-  return cards.map(card => {
-    let adjustedCard = card.map(val => val - 1);
-    while(adjustedCard.length < 8) {
-        adjustedCard.push(null); 
-    }
-    for (let i = adjustedCard.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [adjustedCard[i], adjustedCard[j]] = [adjustedCard[j], adjustedCard[i]];
-    }
-    return adjustedCard;
-  });
-};
+            return cards.map(card => {
+                let adjustedCard = card.map(val => val - 1);
+                // 補齊到 8 個符號
+                while(adjustedCard.length < 8) {
+                    adjustedCard.push(null); 
+                }
+                // 洗牌
+                for (let i = adjustedCard.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [adjustedCard[i], adjustedCard[j]] = [adjustedCard[j], adjustedCard[i]];
+                }
+                return adjustedCard;
+            });
+        };
 
-const DEFAULT_EMOJIS = [
-  "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯",
-  "🦁", "🐮", "🐷", "🐸", "🐵", "🐔", "🐧", "🐦", "🐤", "🦆",
-  "🦅", "🦉", "🦇", "🐺", "🐗", "🐴", "🦄", "🐝", "🐛", "🦋",
-  "🐌", "🐞", "🐜", "🦟", "🦗", "🕷", "🕸", "🦂", "🐢", "🐍",
-  "🦎", "🦖", "🦕", "🐙", "🦑", "🦐", "🦞", "🦀", "🐡", "🐠",
-  "🐟", "🐬", "🐳", "🦈", "🐊", "🐅", "🐆", "🦓", "🦍"
-];
-
-const DECK_SIZES = [
-  { n: 3, count: 13, label: "迷你版 (13張卡)", desc: "需 13 張照片" },
-  { n: 5, count: 31, label: "標準版 (31張卡)", desc: "預設推薦！需 31 張照片" },
-  { n: 7, count: 57, label: "完整版 (57張卡)", desc: "需 57 張照片" }
-];
-
-const CARDS_PER_PAGE = 6;
-
-export default function DobbleGenerator() {
-  const [images, setImages] = useState([]);
-  const [deck, setDeck] = useState([]);
-  const [logoImage, setLogoImage] = useState(null);
-  const [deckSize, setDeckSize] = useState(DECK_SIZES[1]); 
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [processStatus, setProcessStatus] = useState("");
-  const printRef = useRef(null);
-
-  // 載入 PDF 與 ZIP 相關套件
-  const scriptsLoaded = useExternalScripts([
-    "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
-    "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
-    "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",
-    "https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"
-  ]);
-
-  const handleImageUpload = (e) => {
-    const files = Array.from(e.target.files);
-    const newImages = files.map(file => ({
-      id: Math.random().toString(36).substr(2, 9),
-      url: URL.createObjectURL(file),
-      file: file
-    }));
-    setImages(prev => [...prev, ...newImages]);
-  };
-
-  const handleLogoUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setLogoImage(URL.createObjectURL(file));
-    }
-  };
-
-  const clearImages = () => {
-    setImages([]);
-    setDeck([]);
-  };
-
-  const generateDeck = () => {
-    const rawDeck = generateDobbleDeck(deckSize.n);
-    setDeck(rawDeck);
-  };
-
-  // 統一的內容渲染邏輯
-  const getSymbolContent = (symbolIndex, isPrint = false) => {
-    if (symbolIndex === null) return <div className="w-full h-full bg-slate-50/20"></div>;
-
-    const hasImage = images[symbolIndex];
-    
-    // 容器樣式：使用 Flexbox 強制置中
-    const containerStyle = {
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-        padding: '2px'
-    };
-
-    if (hasImage) {
-        return (
-            <div style={containerStyle}>
-                <img 
-                    src={images[symbolIndex].url} 
-                    alt="symbol" 
-                    style={{ 
-                        maxWidth: '100%', 
-                        maxHeight: '100%', 
-                        objectFit: 'contain', // 確保比例不變
-                        display: 'block' 
-                    }} 
-                />
-            </div>
-        );
-    } else {
-        const emoji = DEFAULT_EMOJIS[symbolIndex % DEFAULT_EMOJIS.length];
-        return (
-            <div style={containerStyle}>
-                <span style={{ 
-                    fontSize: isPrint ? '48px' : '32px', 
-                    lineHeight: '1',
-                    display: 'block',
-                    // 針對 PDF 列印模式，強制往上移動 4mm (原本是 2mm，現在再加 2mm)
-                    position: 'relative',
-                    top: isPrint ? '-4mm' : '0' 
-                }}>
-                    {emoji}
-                </span>
-            </div>
-        );
-    }
-  };
-
-  // 生成圖片資料 (共用函式)
-  const generateCardImages = async () => {
-    if (!window.html2canvas) return [];
-    
-    const container = printRef.current;
-    
-    // 將容器移到螢幕可見區域外，而不是 display: none
-    container.style.position = 'fixed';
-    container.style.left = '0';
-    container.style.top = '0';
-    container.style.zIndex = '-1000';
-    container.style.opacity = '1'; // 確保可見才能截圖
-    container.style.display = 'block';
-
-    const cardElements = Array.from(container.querySelectorAll('.print-card-wrapper'));
-    const generatedImages = [];
-
-    for (let i = 0; i < cardElements.length; i++) {
-        setProcessStatus(`正在處理第 ${i + 1} / ${cardElements.length} 張卡片...`);
-        setLoadingProgress(Math.round(((i) / cardElements.length) * 100));
-
-        const canvas = await window.html2canvas(cardElements[i], {
-            scale: 2, // 解析度
-            useCORS: true,
-            logging: false,
-            backgroundColor: '#ffffff'
-        });
-        
-        generatedImages.push(canvas.toDataURL('image/jpeg', 0.9));
-    }
-
-    // 復原
-    container.style.display = 'none';
-    return generatedImages;
-  };
-
-  const downloadPDF = async () => {
-    if (deck.length === 0 || !scriptsLoaded) return;
-    setIsProcessing(true);
-    setLoadingProgress(0);
-
-    try {
-        const cardImages = await generateCardImages();
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF('p', 'mm', 'a4');
-
-        setProcessStatus("正在排版 PDF...");
-        
-        // A4 排版參數
-        const pos = [
-            { x: 10, y: 10 }, { x: 110, y: 10 },
-            { x: 10, y: 105 }, { x: 110, y: 105 },
-            { x: 10, y: 200 }, { x: 110, y: 200 }
+        const DEFAULT_EMOJIS = [
+            "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯",
+            "🦁", "🐮", "🐷", "🐸", "🐵", "🐔", "🐧", "🐦", "🐤", "🦆",
+            "🦅", "🦉", "🦇", "🐺", "🐗", "🐴", "🦄", "🐝", "🐛", "🦋",
+            "🐌", "🐞", "🐜", "🦟", "🦗", "🕷", "🕸", "🦂", "🐢", "🐍",
+            "🦎", "🦖", "🦕", "🐙", "🦑", "🦐", "🦞", "🦀", "🐡", "🐠",
+            "🐟", "🐬", "🐳", "🦈", "🐊", "🐅", "🐆", "🦓", "🦍"
         ];
 
-        for (let i = 0; i < cardImages.length; i++) {
-            const pageIndex = Math.floor(i / CARDS_PER_PAGE);
-            const posIndex = i % CARDS_PER_PAGE;
+        const DECK_SIZES = [
+            { n: 3, count: 13, label: "迷你版 (13張卡)", desc: "需 13 張照片" },
+            { n: 5, count: 31, label: "標準版 (31張卡)", desc: "預設推薦！需 31 張照片" },
+            { n: 7, count: 57, label: "完整版 (57張卡)", desc: "需 57 張照片" }
+        ];
 
-            if (posIndex === 0 && pageIndex > 0) doc.addPage();
-            
-            doc.addImage(cardImages[i], 'JPEG', pos[posIndex].x, pos[posIndex].y, 90, 90);
+        const CARDS_PER_PAGE = 6;
+
+        function DobbleGenerator() {
+            const [images, setImages] = useState([]);
+            const [deck, setDeck] = useState([]);
+            const [logoImage, setLogoImage] = useState(null);
+            const [deckSize, setDeckSize] = useState(DECK_SIZES[1]); 
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [loadingProgress, setLoadingProgress] = useState(0);
+            const [processStatus, setProcessStatus] = useState("");
+            const printRef = useRef(null);
+
+            const handleImageUpload = (e) => {
+                const files = Array.from(e.target.files);
+                const newImages = files.map(file => ({
+                    id: Math.random().toString(36).substr(2, 9),
+                    url: URL.createObjectURL(file),
+                    file: file
+                }));
+                setImages(prev => [...prev, ...newImages]);
+            };
+
+            const handleLogoUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    setLogoImage(URL.createObjectURL(file));
+                }
+            };
+
+            const clearImages = () => {
+                setImages([]);
+                setDeck([]);
+            };
+
+            const generateDeck = () => {
+                const rawDeck = generateDobbleDeck(deckSize.n);
+                setDeck(rawDeck);
+            };
+
+            // 統一的內容渲染邏輯
+            const getSymbolContent = (symbolIndex, isPrint = false) => {
+                // 處理空位 (裝飾性淡灰色斜線)
+                if (symbolIndex === null) {
+                    return (
+                        <div className="w-full h-full bg-slate-50 relative overflow-hidden">
+                            <div className="absolute inset-0 opacity-10" 
+                                style={{ 
+                                    backgroundImage: 'linear-gradient(45deg, #000 25%, transparent 25%, transparent 50%, #000 50%, #000 75%, transparent 75%, transparent)', 
+                                    backgroundSize: '10px 10px' 
+                                }}>
+                            </div>
+                        </div>
+                    );
+                }
+
+                const hasImage = images[symbolIndex];
+                
+                // 容器樣式：使用 Flexbox 強制置中
+                const containerStyle = {
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    padding: '2px',
+                    // 針對 PDF 列印模式的特殊修正，強制將 Emoji 往上推 3mm
+                    paddingBottom: isPrint && !hasImage ? '8mm' : '2px',
+                    boxSizing: 'border-box'
+                };
+
+                if (hasImage) {
+                    return (
+                        <div style={containerStyle}>
+                            <img 
+                                src={images[symbolIndex].url} 
+                                alt="symbol" 
+                                style={{ 
+                                    maxWidth: '100%', 
+                                    maxHeight: '100%', 
+                                    objectFit: 'contain',
+                                    display: 'block' 
+                                }} 
+                            />
+                        </div>
+                    );
+                } else {
+                    const emoji = DEFAULT_EMOJIS[symbolIndex % DEFAULT_EMOJIS.length];
+                    return (
+                        <div style={containerStyle}>
+                            <span style={{ 
+                                fontSize: isPrint ? '48px' : '32px', 
+                                lineHeight: '1',
+                                display: 'block',
+                                fontFamily: '"Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif'
+                            }}>
+                                {emoji}
+                            </span>
+                        </div>
+                    );
+                }
+            };
+
+            // 生成圖片資料
+            const generateCardImages = async () => {
+                if (!window.html2canvas) return [];
+                
+                const container = printRef.current;
+                
+                // 將容器移到螢幕可見區域外
+                container.style.position = 'fixed';
+                container.style.left = '0';
+                container.style.top = '0';
+                container.style.zIndex = '-1000';
+                container.style.opacity = '1';
+                container.style.display = 'block';
+
+                const cardElements = Array.from(container.querySelectorAll('.print-card-wrapper'));
+                const generatedImages = [];
+
+                for (let i = 0; i < cardElements.length; i++) {
+                    setProcessStatus(`正在處理第 ${i + 1} / ${cardElements.length} 張卡片...`);
+                    setLoadingProgress(Math.round(((i) / cardElements.length) * 100));
+
+                    const canvas = await window.html2canvas(cardElements[i], {
+                        scale: 2,
+                        useCORS: true,
+                        logging: false,
+                        backgroundColor: '#ffffff'
+                    });
+                    
+                    generatedImages.push(canvas.toDataURL('image/jpeg', 0.9));
+                }
+
+                container.style.display = 'none';
+                return generatedImages;
+            };
+
+            const downloadPDF = async () => {
+                if (deck.length === 0) return;
+                setIsProcessing(true);
+                setLoadingProgress(0);
+
+                try {
+                    const cardImages = await generateCardImages();
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF('p', 'mm', 'a4');
+
+                    setProcessStatus("正在排版 PDF...");
+                    
+                    const pos = [
+                        { x: 10, y: 10 }, { x: 110, y: 10 },
+                        { x: 10, y: 105 }, { x: 110, y: 105 },
+                        { x: 10, y: 200 }, { x: 110, y: 200 }
+                    ];
+
+                    for (let i = 0; i < cardImages.length; i++) {
+                        const pageIndex = Math.floor(i / CARDS_PER_PAGE);
+                        const posIndex = i % CARDS_PER_PAGE;
+
+                        if (posIndex === 0 && pageIndex > 0) doc.addPage();
+                        
+                        doc.addImage(cardImages[i], 'JPEG', pos[posIndex].x, pos[posIndex].y, 90, 90);
+                    }
+
+                    doc.save(`桌遊卡牌_${deckSize.count}張版.pdf`);
+                } catch (e) {
+                    console.error(e);
+                    alert("生成失敗，請重試");
+                }
+                
+                setIsProcessing(false);
+                setProcessStatus("");
+            };
+
+            const downloadZIP = async () => {
+                if (deck.length === 0) return;
+                setIsProcessing(true);
+                setLoadingProgress(0);
+
+                try {
+                    const cardImages = await generateCardImages();
+                    const zip = new window.JSZip();
+                    
+                    setProcessStatus("正在壓縮圖片...");
+
+                    cardImages.forEach((dataUrl, i) => {
+                        const base64Data = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
+                        zip.file(`card_${i + 1}.jpg`, base64Data, { base64: true });
+                    });
+
+                    const content = await zip.generateAsync({ type: "blob" });
+                    window.saveAs(content, `桌遊圖檔包_${deckSize.count}張.zip`);
+
+                } catch (e) {
+                    console.error(e);
+                    alert("壓縮失敗，請重試");
+                }
+
+                setIsProcessing(false);
+                setProcessStatus("");
+            };
+
+            return (
+                <div className="min-h-screen bg-amber-50 font-sans text-slate-800 pb-20">
+                    {/* Header */}
+                    <header className="bg-orange-600 text-white p-6 shadow-lg border-b-4 border-orange-800">
+                        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="bg-white p-2 rounded-lg text-orange-600">
+                                    <Icons.Grid size={40} />
+                                </div>
+                                <div>
+                                    <h1 className="text-3xl font-extrabold tracking-wide">樂齡桌遊生成器</h1>
+                                    <p className="text-orange-100 font-medium text-lg">大圖示 • 清晰九宮格 • A4 六張列印</p>
+                                </div>
+                            </div>
+                            <div className="flex gap-3">
+                                <button 
+                                    onClick={clearImages}
+                                    className="px-6 py-3 bg-orange-700 hover:bg-orange-800 rounded-xl flex items-center gap-2 transition text-lg font-bold border-2 border-orange-900 shadow-sm"
+                                >
+                                    <Icons.RefreshCw size={24} /> 重置
+                                </button>
+                                <button 
+                                    onClick={generateDeck}
+                                    className="px-6 py-3 bg-white text-orange-700 font-extrabold rounded-xl hover:bg-orange-50 flex items-center gap-2 shadow-lg transition text-lg border-b-4 border-orange-200 active:border-b-0 active:translate-y-1"
+                                >
+                                    <Icons.Grid size={24} /> 生成牌組
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-6xl mx-auto p-6 space-y-8">
+                        
+                        {/* Settings & Upload Section */}
+                        <section className="bg-white p-8 rounded-2xl shadow-md border-2 border-amber-200">
+                            
+                            {/* Deck Size Selector */}
+                            <div className="mb-8 p-6 bg-amber-50 rounded-xl border-2 border-amber-100">
+                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-amber-800">
+                                    <Icons.Settings size={24} />
+                                    步驟 0: 選擇卡片數量
+                                </h2>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {DECK_SIZES.map((size) => (
+                                        <button
+                                            key={size.n}
+                                            onClick={() => setDeckSize(size)}
+                                            className={`p-4 rounded-xl border-2 text-left transition relative ${
+                                                deckSize.n === size.n 
+                                                ? 'border-orange-500 bg-white shadow-md ring-2 ring-orange-200' 
+                                                : 'border-slate-200 bg-white hover:border-orange-300'
+                                            }`}
+                                        >
+                                            <div className="font-bold text-lg text-slate-800">{size.label}</div>
+                                            <div className="text-sm text-slate-500 mt-1">{size.desc}</div>
+                                            {deckSize.n === size.n && (
+                                                <div className="absolute top-2 right-2 w-4 h-4 bg-orange-500 rounded-full"></div>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                                
+                                {/* Warning logic */}
+                                {deckSize.n === 7 && images.length < 57 && (
+                                    <div className="mt-4 p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 flex items-start gap-3">
+                                        <Icons.AlertTriangle className="flex-shrink-0" />
+                                        <div className="text-sm">
+                                            <strong>注意：</strong> 您選擇了 57 張完整版，但目前照片只有 {images.length} 張。
+                                            <br/>
+                                            為了符合數學規則，必須有 57 個不同的圖案。缺少的 {57 - images.length} 個圖案將會用 <strong>Emoji</strong> 替代。
+                                            <br/>
+                                            若想完全不使用 Emoji，請補齊至 57 張照片，或改選「標準版 (31張)」。
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <h2 className="text-2xl font-bold mb-6 flex items-center gap-3 text-amber-800">
+                                <div className="bg-amber-100 p-2 rounded-full"><Icons.ImageIcon className="text-amber-600" size={28} /></div>
+                                步驟 1: 上傳圖案
+                            </h2>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="space-y-4">
+                                    <label className="block text-lg font-bold text-slate-700">
+                                        遊戲圖案 (目前已上傳 {images.length} 張)
+                                    </label>
+
+                                    <div className="bg-slate-50 p-4 rounded-xl border-2 border-slate-200">
+                                        <div className="pt-2 border-t border-slate-200">
+                                            <p className="font-bold text-orange-700 text-lg">目標：{deckSize.count} 張卡片 ({deckSize.count} 個圖案)</p>
+                                            <p className="text-sm text-slate-600 mt-2 font-medium">
+                                                {images.length < deckSize.count 
+                                                    ? `⚠️ 還缺 ${deckSize.count - images.length} 張照片。` 
+                                                    : "✅ 照片充足！"}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="relative group border-4 border-dashed border-amber-300 rounded-2xl p-10 text-center hover:border-orange-500 hover:bg-orange-50 transition cursor-pointer bg-amber-50/50">
+                                        <input 
+                                            type="file" 
+                                            multiple 
+                                            accept="image/*" 
+                                            onChange={handleImageUpload}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        />
+                                        <Icons.Upload className="mx-auto text-amber-400 mb-4 group-hover:text-orange-500" size={48} />
+                                        <p className="text-slate-600 text-xl font-medium">點此選擇照片</p>
+                                        <p className="text-slate-400 mt-2">可一次多選</p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <label className="block text-lg font-bold text-slate-700">
+                                        中間裝飾圖 (Logo)
+                                    </label>
+                                    <div className="relative group border-4 border-dashed border-slate-300 rounded-2xl p-4 flex items-center justify-center h-[200px] hover:border-orange-400 hover:bg-orange-50 transition cursor-pointer bg-slate-50">
+                                        <input 
+                                            type="file" 
+                                            accept="image/*" 
+                                            onChange={handleLogoUpload}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        />
+                                        {logoImage ? (
+                                            <img src={logoImage} alt="Logo" className="h-full w-auto object-contain" />
+                                        ) : (
+                                            <div className="text-center">
+                                                <div className="bg-slate-200 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400">
+                                                    <span className="text-3xl font-bold">?</span>
+                                                </div>
+                                                <span className="text-slate-500 font-medium">點此上傳 Logo</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Image Preview Strip */}
+                            {images.length > 0 && (
+                                <div className="mt-8">
+                                    <div className="flex justify-between items-end mb-3">
+                                        <p className="text-lg font-bold text-slate-700">已上傳預覽 (可點擊刪除):</p>
+                                        <button onClick={() => setImages([])} className="text-red-500 text-sm hover:underline">全部刪除</button>
+                                    </div>
+                                    <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-amber-300">
+                                        {images.map((img) => (
+                                            <div key={img.id} className="relative flex-shrink-0 w-24 h-24 border-2 border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm group">
+                                                <img src={img.url} className="w-full h-full object-cover" />
+                                                <button 
+                                                    onClick={() => setImages(images.filter(i => i.id !== img.id))}
+                                                    className="absolute inset-0 bg-black/50 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition"
+                                                >
+                                                    <Icons.Trash2 size={24} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </section>
+
+                        {/* Deck Preview Section */}
+                        {deck.length > 0 && (
+                            <section className="space-y-8">
+                                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row items-center justify-between sticky top-4 z-10">
+                                    <h2 className="text-2xl font-bold flex items-center gap-3 text-slate-800">
+                                        <Icons.Grid className="text-orange-600" size={28} /> 
+                                        步驟 2: 預覽牌組 ({deck.length} 張)
+                                    </h2>
+                                    
+                                    <div className="flex gap-2">
+                                        {/* ZIP Download Button */}
+                                        <button 
+                                            onClick={downloadZIP}
+                                            disabled={isProcessing}
+                                            className={`px-4 py-3 rounded-xl font-bold text-lg flex items-center gap-2 shadow-lg transition transform active:scale-95 ${
+                                            isProcessing
+                                            ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
+                                            : 'bg-blue-600 text-white hover:bg-blue-700 border-b-4 border-blue-800'
+                                            }`}
+                                        >
+                                            {isProcessing ? `處理中 ${loadingProgress}%` : (
+                                                <><Icons.Archive size={20} /> 下載圖片包(ZIP)</>
+                                            )}
+                                        </button>
+
+                                        {/* PDF Download Button */}
+                                        <button 
+                                            onClick={downloadPDF}
+                                            disabled={isProcessing}
+                                            className={`px-6 py-3 rounded-xl font-bold text-lg flex items-center gap-3 shadow-lg transition transform active:scale-95 ${
+                                            isProcessing
+                                            ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
+                                            : 'bg-green-600 text-white hover:bg-green-700 border-b-4 border-green-800'
+                                            }`}
+                                        >
+                                            {isProcessing ? `${processStatus}` : (
+                                                <><Icons.Download size={24} /> 下載 PDF</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Display Grid (Preview on Screen) */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-8">
+                                    {deck.map((card, cardIndex) => (
+                                        <div key={cardIndex} className="bg-white rounded-2xl shadow-lg p-3 aspect-square flex flex-col items-center border-4 border-slate-200 relative">
+                                            <div className="absolute -top-3 -left-3 bg-orange-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold shadow-md z-10">
+                                                {cardIndex + 1}
+                                            </div>
+                                            
+                                            <div className="grid grid-cols-3 grid-rows-3 gap-1 w-full h-full bg-slate-100 p-1 rounded-lg">
+                                                {[0, 1, 2, 3].map(i => (
+                                                    <div key={`c-${cardIndex}-top-${i}`} className="bg-white rounded-lg overflow-hidden flex items-center justify-center border border-slate-200 shadow-sm relative">
+                                                        {getSymbolContent(card[i])}
+                                                    </div>
+                                                ))}
+                                                
+                                                <div className="bg-amber-50 rounded-lg overflow-hidden flex items-center justify-center border-2 border-amber-200 relative shadow-inner">
+                                                    {logoImage ? (
+                                                        <img src={logoImage} className="w-full h-full object-contain" />
+                                                    ) : (
+                                                        <div className="text-center">
+                                                            <span className="text-amber-400 font-black text-xs">LOGO</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {[4, 5, 6, 7].map(i => (
+                                                    <div key={`c-${cardIndex}-bottom-${i}`} className="bg-white rounded-lg overflow-hidden flex items-center justify-center border border-slate-200 shadow-sm relative">
+                                                        {getSymbolContent(card[i])}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+                    </main>
+
+                    {/* Hidden Print Container - 使用高對比、標準 HTML Flow 佈局以利截圖 */}
+                    <div 
+                        ref={printRef} 
+                        style={{ 
+                            position: 'absolute', 
+                            top: 0, 
+                            left: '-9999px', // 移出畫面
+                            width: '90mm',   // 只需定義寬度，內容會被複製
+                            display: 'none'  // 初始隱藏，生成時會被設為 block
+                        }} 
+                    >
+                        {deck.map((card, cardIndex) => (
+                            <div 
+                                key={`print-${cardIndex}`} 
+                                className="print-card-wrapper"
+                                style={{ 
+                                    width: '90mm',
+                                    height: '90mm', 
+                                    margin: '0',
+                                    padding: '0',
+                                    backgroundColor: '#fff',
+                                    border: '2px solid #000000', // 外框加粗 2px
+                                    borderRadius: '6mm',
+                                    overflow: 'hidden',
+                                    boxSizing: 'border-box',
+                                    display: 'block'
+                                }}
+                            >
+                                {/* 使用 Flex Grid 模擬九宮格，確保相容性 */}
+                                <div style={{ 
+                                    width: '100%', 
+                                    height: '100%', 
+                                    display: 'flex', 
+                                    flexWrap: 'wrap'
+                                }}>
+                                    {/* 第一列 */}
+                                    {[0, 1, 2].map(i => (
+                                        <div key={`p-c-${i}`} style={{ width: '33.33%', height: '33.33%', border: '2px solid #000', boxSizing: 'border-box' }}>
+                                            {getSymbolContent(card[i], true)}
+                                        </div>
+                                    ))}
+                                    {/* 第二列 (含 Logo) */}
+                                    <div style={{ width: '33.33%', height: '33.33%', border: '2px solid #000', boxSizing: 'border-box' }}>
+                                        {getSymbolContent(card[3], true)}
+                                    </div>
+                                    <div style={{ width: '33.33%', height: '33.33%', border: '2px solid #000', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        {logoImage ? (
+                                            <img src={logoImage} style={{ maxWidth: '90%', maxHeight: '90%', objectFit: 'contain' }} />
+                                        ) : (
+                                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#ccc' }}>LOGO</span>
+                                        )}
+                                    </div>
+                                    <div style={{ width: '33.33%', height: '33.33%', border: '2px solid #000', boxSizing: 'border-box' }}>
+                                        {getSymbolContent(card[4], true)}
+                                    </div>
+                                    {/* 第三列 */}
+                                    {[5, 6, 7].map(i => (
+                                        <div key={`p-c-${i}`} style={{ width: '33.33%', height: '33.33%', border: '2px solid #000', boxSizing: 'border-box' }}>
+                                            {getSymbolContent(card[i], true)}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
         }
 
-        doc.save(`桌遊卡牌_${deckSize.count}張版.pdf`);
-    } catch (e) {
-        console.error(e);
-        alert("生成失敗，請重試");
-    }
-    
-    setIsProcessing(false);
-    setProcessStatus("");
-  };
-
-  const downloadZIP = async () => {
-    if (deck.length === 0 || !scriptsLoaded) return;
-    setIsProcessing(true);
-    setLoadingProgress(0);
-
-    try {
-        const cardImages = await generateCardImages();
-        const zip = new window.JSZip();
-        
-        setProcessStatus("正在壓縮圖片...");
-
-        cardImages.forEach((dataUrl, i) => {
-            const base64Data = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
-            zip.file(`card_${i + 1}.jpg`, base64Data, { base64: true });
-        });
-
-        const content = await zip.generateAsync({ type: "blob" });
-        window.saveAs(content, `桌遊圖檔包_${deckSize.count}張.zip`);
-
-    } catch (e) {
-        console.error(e);
-        alert("壓縮失敗，請重試");
-    }
-
-    setIsProcessing(false);
-    setProcessStatus("");
-  };
-
-  return (
-    <div className="min-h-screen bg-amber-50 font-sans text-slate-800 pb-20">
-      {/* Header */}
-      <header className="bg-orange-600 text-white p-6 shadow-lg border-b-4 border-orange-800">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="bg-white p-2 rounded-lg text-orange-600">
-                <Grid size={40} strokeWidth={2.5} />
-            </div>
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-wide">樂齡桌遊生成器</h1>
-              <p className="text-orange-100 font-medium text-lg">大圖示 • 清晰九宮格 • A4 六張列印</p>
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <button 
-              onClick={clearImages}
-              className="px-6 py-3 bg-orange-700 hover:bg-orange-800 rounded-xl flex items-center gap-2 transition text-lg font-bold border-2 border-orange-900 shadow-sm"
-            >
-              <RefreshCw size={24} /> 重置
-            </button>
-            <button 
-              onClick={generateDeck}
-              className="px-6 py-3 bg-white text-orange-700 font-extrabold rounded-xl hover:bg-orange-50 flex items-center gap-2 shadow-lg transition text-lg border-b-4 border-orange-200 active:border-b-0 active:translate-y-1"
-            >
-              <Grid size={24} /> 生成牌組
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto p-6 space-y-8">
-        
-        {/* Settings & Upload Section */}
-        <section className="bg-white p-8 rounded-2xl shadow-md border-2 border-amber-200">
-          
-          {/* Deck Size Selector */}
-          <div className="mb-8 p-6 bg-amber-50 rounded-xl border-2 border-amber-100">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-amber-800">
-                <Settings size={24} />
-                步驟 0: 選擇卡片數量
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {DECK_SIZES.map((size) => (
-                    <button
-                        key={size.n}
-                        onClick={() => setDeckSize(size)}
-                        className={`p-4 rounded-xl border-2 text-left transition relative ${
-                            deckSize.n === size.n 
-                            ? 'border-orange-500 bg-white shadow-md ring-2 ring-orange-200' 
-                            : 'border-slate-200 bg-white hover:border-orange-300'
-                        }`}
-                    >
-                        <div className="font-bold text-lg text-slate-800">{size.label}</div>
-                        <div className="text-sm text-slate-500 mt-1">{size.desc}</div>
-                        {deckSize.n === size.n && (
-                            <div className="absolute top-2 right-2 w-4 h-4 bg-orange-500 rounded-full"></div>
-                        )}
-                    </button>
-                ))}
-            </div>
-          </div>
-
-          <h2 className="text-2xl font-bold mb-6 flex items-center gap-3 text-amber-800">
-            <div className="bg-amber-100 p-2 rounded-full"><ImageIcon className="text-amber-600" size={28} /></div>
-            步驟 1: 上傳圖案
-          </h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-4">
-              <label className="block text-lg font-bold text-slate-700">
-                遊戲圖案 (目前已上傳 {images.length} 張)
-              </label>
-
-              {/* 智慧狀態顯示 */}
-              <div className="bg-slate-50 p-4 rounded-xl border-2 border-slate-200">
-                 <div className="pt-2 border-t border-slate-200">
-                    <p className="font-bold text-orange-700 text-lg">目前目標：製作 {deckSize.count} 張卡片</p>
-                    <p className="text-sm text-slate-600 mt-2 font-medium">
-                        {images.length < deckSize.count 
-                            ? `⚠️ 您的照片還少 ${deckSize.count - images.length} 張。` 
-                            : "✅ 照片充足！"}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                        {images.length < deckSize.count 
-                           ? "不用擔心，點擊「生成牌組」後，不足的部分會自動變成可愛的 Emoji 圖示。" 
-                           : "所有圖案都將使用您的照片，不會出現 Emoji。"}
-                    </p>
-                 </div>
-              </div>
-
-              <div className="relative group border-4 border-dashed border-amber-300 rounded-2xl p-10 text-center hover:border-orange-500 hover:bg-orange-50 transition cursor-pointer bg-amber-50/50">
-                <input 
-                  type="file" 
-                  multiple 
-                  accept="image/*" 
-                  onChange={handleImageUpload}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-                <Upload className="mx-auto text-amber-400 mb-4 group-hover:text-orange-500" size={48} />
-                <p className="text-slate-600 text-xl font-medium">點此選擇照片</p>
-                <p className="text-slate-400 mt-2">可一次多選 (建議 {deckSize.count} 張以上)</p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <label className="block text-lg font-bold text-slate-700">
-                中間裝飾圖 (Logo)
-              </label>
-               <p className="text-sm text-slate-500">這張圖會放在每張卡片的正中間，不參與遊戲，純裝飾。</p>
-              <div className="relative group border-4 border-dashed border-slate-300 rounded-2xl p-4 flex items-center justify-center h-[200px] hover:border-orange-400 hover:bg-orange-50 transition cursor-pointer bg-slate-50">
-                 <input 
-                  type="file" 
-                  accept="image/*" 
-                  onChange={handleLogoUpload}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-                {logoImage ? (
-                  <img src={logoImage} alt="Logo" className="h-full w-auto object-contain" />
-                ) : (
-                  <div className="text-center">
-                    <div className="bg-slate-200 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400">
-                        <span className="text-3xl font-bold">?</span>
-                    </div>
-                    <span className="text-slate-500 font-medium">點此上傳 Logo</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Image Preview Strip */}
-          {images.length > 0 && (
-            <div className="mt-8">
-              <div className="flex justify-between items-end mb-3">
-                  <p className="text-lg font-bold text-slate-700">已上傳預覽 (可點擊刪除):</p>
-                  <button onClick={() => setImages([])} className="text-red-500 text-sm hover:underline">全部刪除</button>
-              </div>
-              <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-amber-300">
-                {images.map((img) => (
-                  <div key={img.id} className="relative flex-shrink-0 w-24 h-24 border-2 border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm group">
-                    <img src={img.url} className="w-full h-full object-cover" />
-                    <button 
-                      onClick={() => setImages(images.filter(i => i.id !== img.id))}
-                      className="absolute inset-0 bg-black/50 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition"
-                    >
-                      <Trash2 size={24} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* Deck Preview Section */}
-        {deck.length > 0 && (
-          <section className="space-y-8">
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row items-center justify-between sticky top-4 z-10">
-              <h2 className="text-2xl font-bold flex items-center gap-3 text-slate-800">
-                <Grid className="text-orange-600" size={28} /> 
-                步驟 2: 預覽牌組 ({deck.length} 張)
-              </h2>
-              
-              <div className="flex gap-2">
-                 {/* ZIP Download Button */}
-                <button 
-                    onClick={downloadZIP}
-                    disabled={isProcessing || !scriptsLoaded}
-                    className={`px-4 py-3 rounded-xl font-bold text-lg flex items-center gap-2 shadow-lg transition transform active:scale-95 ${
-                    isProcessing || !scriptsLoaded
-                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
-                    : 'bg-blue-600 text-white hover:bg-blue-700 border-b-4 border-blue-800'
-                    }`}
-                >
-                    {isProcessing ? `處理中 ${loadingProgress}%` : (
-                    !scriptsLoaded ? '載入中...' : <><Archive size={20} /> 下載圖片包(ZIP)</>
-                    )}
-                </button>
-
-                {/* PDF Download Button */}
-                <button 
-                    onClick={downloadPDF}
-                    disabled={isProcessing || !scriptsLoaded}
-                    className={`px-6 py-3 rounded-xl font-bold text-lg flex items-center gap-3 shadow-lg transition transform active:scale-95 ${
-                    isProcessing || !scriptsLoaded
-                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
-                    : 'bg-green-600 text-white hover:bg-green-700 border-b-4 border-green-800'
-                    }`}
-                >
-                    {isProcessing ? `${processStatus}` : (
-                    !scriptsLoaded ? '載入中...' : <><Download size={24} /> 下載 PDF</>
-                    )}
-                </button>
-              </div>
-            </div>
-
-            {/* Display Grid (Preview on Screen) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-8">
-              {deck.map((card, cardIndex) => (
-                <div key={cardIndex} className="bg-white rounded-2xl shadow-lg p-3 aspect-square flex flex-col items-center border-4 border-slate-200 relative">
-                  <div className="absolute -top-3 -left-3 bg-orange-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold shadow-md z-10">
-                    {cardIndex + 1}
-                  </div>
-                  
-                  <div className="grid grid-cols-3 grid-rows-3 gap-1 w-full h-full bg-slate-100 p-1 rounded-lg">
-                    {[0, 1, 2, 3].map(i => (
-                      <div key={`c-${cardIndex}-top-${i}`} className="bg-white rounded-lg overflow-hidden flex items-center justify-center border border-slate-200 shadow-sm relative">
-                        {getSymbolContent(card[i])}
-                      </div>
-                    ))}
-                    
-                    <div className="bg-amber-50 rounded-lg overflow-hidden flex items-center justify-center border-2 border-amber-200 relative shadow-inner">
-                       {logoImage ? (
-                         <img src={logoImage} className="w-full h-full object-contain" />
-                       ) : (
-                         <div className="text-center">
-                            <span className="text-amber-400 font-black text-xs">LOGO</span>
-                         </div>
-                       )}
-                    </div>
-
-                    {[4, 5, 6, 7].map(i => (
-                      <div key={`c-${cardIndex}-bottom-${i}`} className="bg-white rounded-lg overflow-hidden flex items-center justify-center border border-slate-200 shadow-sm relative">
-                        {getSymbolContent(card[i])}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-      </main>
-
-      {/* Hidden Print Container - 使用高對比、標準 HTML Flow 佈局以利截圖 */}
-      <div 
-        ref={printRef} 
-        style={{ 
-            position: 'absolute', 
-            top: 0, 
-            left: '-9999px', // 移出畫面
-            width: '90mm',   // 只需定義寬度，內容會被複製
-            display: 'none'  // 初始隱藏，生成時會被設為 block
-        }} 
-      >
-        {deck.map((card, cardIndex) => (
-          <div 
-            key={`print-${cardIndex}`} 
-            className="print-card-wrapper"
-            style={{ 
-              width: '90mm',
-              height: '90mm', 
-              margin: '0',
-              padding: '0',
-              backgroundColor: '#fff',
-              border: '1mm solid #000000', // 外框改為 1mm
-              borderRadius: '6mm',
-              overflow: 'hidden',
-              boxSizing: 'border-box',
-              display: 'block' // 確保是 block
-            }}
-          >
-            {/* 使用 Flex Grid 模擬九宮格，確保相容性 */}
-            <div style={{ 
-                width: '100%', 
-                height: '100%', 
-                display: 'flex', 
-                flexWrap: 'wrap'
-            }}>
-                {/* 第一列 */}
-                {[0, 1, 2].map(i => (
-                    <div key={`p-c-${i}`} style={{ width: '33.33%', height: '33.33%', border: '1px solid #000', boxSizing: 'border-box' }}>
-                         {getSymbolContent(card[i], true)}
-                    </div>
-                ))}
-                {/* 第二列 (含 Logo) */}
-                <div style={{ width: '33.33%', height: '33.33%', border: '1px solid #000', boxSizing: 'border-box' }}>
-                     {getSymbolContent(card[3], true)}
-                </div>
-                <div style={{ width: '33.33%', height: '33.33%', border: '1px solid #000', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                     {logoImage ? (
-                        <img src={logoImage} style={{ maxWidth: '90%', maxHeight: '90%', objectFit: 'contain' }} />
-                     ) : (
-                        <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#ccc' }}>LOGO</span>
-                     )}
-                </div>
-                <div style={{ width: '33.33%', height: '33.33%', border: '1px solid #000', boxSizing: 'border-box' }}>
-                     {getSymbolContent(card[4], true)}
-                </div>
-                {/* 第三列 */}
-                {[5, 6, 7].map(i => (
-                    <div key={`p-c-${i}`} style={{ width: '33.33%', height: '33.33%', border: '1px solid #000', boxSizing: 'border-box' }}>
-                         {getSymbolContent(card[i], true)}
-                    </div>
-                ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<DobbleGenerator />);
+    </script>
+</body>
+</html>
